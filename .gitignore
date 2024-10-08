@@ -1,3 +1,5 @@
-animation/*
+animations/*
 env
 state.json
+mixamo_token.txt
+characters.json

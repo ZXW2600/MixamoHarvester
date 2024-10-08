@@ -1,8 +1,8 @@
 
+[!Mixamo Harvester](https://github.com/paulpierre/MixamoHarvester/blob/main/mixamo.png?raw=true)
+# 🌾 MixamoHarvester
 
-# 🌾 MixamoHarvest
-
-**MixamoHarvest** is a tool for downloading and managing ALL Mixamo animations in bulk. Project was inspired by the fantastic [Mixamo Anims Downloader by gnuton](https://github.com/gnuton/mixamo_anims_downloader).
+**MixamoHarvester** is a tool for downloading and managing ALL Mixamo animations in bulk. Project was inspired by the fantastic [Mixamo Anims Downloader by gnuton](https://github.com/gnuton/mixamo_anims_downloader).
 
 ## ✨ Features
 - Automatically downloads all available Mixamo characters and animations.
@@ -34,8 +34,8 @@
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/mixamoharvest.git
-cd mixamoharvest
+git clone https://github.com/paulpierre/MixamoHarvester.git
+cd MixamoHarvester
 ```
 
 ### 2. Install Dependencies
@@ -81,7 +81,7 @@ Ensure you have a valid bearer token from Mixamo. To retrieve it:
 ### 4. Run the Script
 Run the script to start downloading animations:
 ```bash
-python main.py
+python mixamo_harvester.py
 ```
 
 ## 📝 To Do
