@@ -1,5 +1,5 @@
+![Mixamo Harvester](https://github.com/paulpierre/MixamoHarvester/blob/main/mixamo.png?raw=true)
 
-[!Mixamo Harvester](https://github.com/paulpierre/MixamoHarvester/blob/main/mixamo.png?raw=true)
 # 🌾 MixamoHarvester
 
 **MixamoHarvester** is a tool for downloading and managing ALL Mixamo animations in bulk. Project was inspired by the fantastic [Mixamo Anims Downloader by gnuton](https://github.com/gnuton/mixamo_anims_downloader).
