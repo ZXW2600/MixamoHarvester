@@ -164,6 +164,11 @@ def process_animation(bearer_token, character_id, animation, output_dir, state):
         return
 
     filename = f"{animation['name']}_{character_id}.fbx"
+    # replace invalid characters
+    for c in ['/', '\\', '?', '%', '*', ':', '|', '"', '<', '>']:
+        filename = filename.replace(c, '-')
+    
+    
     filepath = os.path.join(output_dir, filename)
 
     if os.path.exists(filepath):
