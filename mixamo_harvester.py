@@ -11,7 +11,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 BASE_URL = "https://www.mixamo.com/api/v1"
 ANIMATIONS_PER_PAGE = 96
-MAX_THREADS = 5  # Adjust this based on your system's capabilities
+MAX_THREADS = 18  # Adjust this based on your system's capabilities
+MAX_RETRY=15
 
 def setup_logging():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,7 +32,7 @@ def get_character_list(bearer_token):
         with open(character_file, "r") as f:
             return json.load(f)
 
-    characters = []
+    characters = {}
     page = 1
     while True:
         url = f"{BASE_URL}/products?page={page}&limit=96&type=Character"
@@ -45,7 +46,12 @@ def get_character_list(bearer_token):
 
         if 'results' in data:
             new_characters = data['results']
-            characters.extend([char['id'] for char in new_characters])
+            for char in new_characters:
+                characters[char['id']] = {
+                    "name": char['name'],
+                    "character_type": char['character_type'],
+                }
+
             if len(new_characters) < 96:
                 break
             page += 1
@@ -78,7 +84,7 @@ def get_product(bearer_token, anim_id, character_id):
     return response.json()
 
 @retry(
-    stop=stop_after_attempt(5),
+    stop=stop_after_attempt(MAX_RETRY),
     wait=wait_exponential(multiplier=1, min=4, max=60),
     retry=retry_if_exception_type(requests.exceptions.RequestException)
 )
@@ -92,7 +98,7 @@ def export_animation(bearer_token, character_id, gms_hash_array, product_name):
     payload = {
         "character_id": character_id,
         "gms_hash": gms_hash_array,
-        "preferences": {"format": "fbx7", "skin": "false", "fps": "30", "reducekf": "0"},
+        "preferences": {"format": "fbx7", "skin": "false", "fps": "60", "reducekf": "0"},
         "product_name": product_name,
         "type": "Motion"
     }
@@ -101,7 +107,7 @@ def export_animation(bearer_token, character_id, gms_hash_array, product_name):
     return response.json()
 
 @retry(
-    stop=stop_after_attempt(5),
+    stop=stop_after_attempt(MAX_RETRY),
     wait=wait_exponential(multiplier=1, min=4, max=60),
     retry=retry_if_exception_type(requests.exceptions.RequestException)
 )
@@ -123,11 +129,24 @@ def monitor_export_progress(bearer_token, character_id):
 
         time.sleep(5)
 
-def load_state():
+def load_state(output_dir):
     if os.path.exists('state.json'):
         with open('state.json', 'r') as f:
             return json.load(f)
-    return {}
+    else:
+        # walk the output directory and create the state
+        state={}
+        # find all L1 subdirectories
+        for character_dir in os.listdir(output_dir):
+            # get the character id
+            character_id=character_dir.split("_")[-1]
+            # get all the files in the directory
+            files=os.listdir(os.path.join(output_dir,character_dir))
+            state[character_id]=files
+        with open('state.json', 'w') as f:
+            json.dump(state, f)
+        return state
+
 
 def save_state(state):
     with open('state.json', 'w') as f:
@@ -158,7 +177,7 @@ def download_animation(url, output_dir, filename, character_id):
 
     logging.info(f"✅ Downloaded: {filepath}")
 
-def process_animation(bearer_token, character_id, animation, output_dir, state):
+def process_animation(bearer_token, character_id, animation, output_dir, state,failed_log_dir):
     if animation["type"]=="MotionPack":
         logging.info(f"⏭️ Skipping Motion Pack: {animation['name']}")
         return
@@ -193,45 +212,62 @@ def process_animation(bearer_token, character_id, animation, output_dir, state):
             state[character_id] = []
         state[character_id].append(filename)
         save_state(state)
-
+        return 
     except Exception as e:
         logging.error(f"❌ Error processing animation {animation['name']}: {str(e)}")
+        with open(os.path.join(failed_log_dir,f"{character_id}_{animation['name']}_{animation['motion_id']}.json"), "w") as f:
+            animation["error"]=str(e)
+            json.dump(animation,f)
 
-def process_animations_for_character(bearer_token, character_id, output_dir, state):
+from tqdm import tqdm
+def process_animations_for_character(bearer_token, character_id, output_dir, state,failed_log_dir):
     logging.info(f"🔄 Processing animations for character: {character_id}")
     page = 1
-
+    total_animations = 0
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         futures = []
         while True:
-            animations_data = get_animation_list(bearer_token, page)
-            animations = animations_data.get("results", [])
-
+            logging.info(f"🔍 Fetching animations for page: {page}")
+            try:
+                animations_data = get_animation_list(bearer_token, page)
+                animations = animations_data.get("results", [])
+            except Exception as e:
+                logging.error(f"❌ Error fetching animations: {str(e)}")
+                time.sleep(5)
+                continue
+            logging.info(f"🔍 Found {len(animations)} animations on this page")
             if not animations:
                 break
-
+            
             for animation in animations:
-                future = executor.submit(process_animation, bearer_token, character_id, animation, output_dir, state)
+                future = executor.submit(process_animation, bearer_token, character_id, animation, output_dir, state,failed_log_dir)
                 futures.append(future)
 
             page += 1
-
-        for future in as_completed(futures):
-            future.result()  # This will raise any exceptions that occurred during execution
-
+            total_animations += len(animations)
+        logging.info(f"🔍 Found a total of {total_animations} animations for character: {character_id}")
+        for future in tqdm(as_completed(futures), total=len(futures),leave=True):
+            ret=future.result()  # This will raise any exceptions that occurred during execution
     logging.info(f"✅ Completed processing for character: {character_id}")
 
 def main():
     setup_logging()
     bearer_token = get_bearer_token()
     characters = get_character_list(bearer_token)
-    state = load_state()
 
     output_dir = "animations"
+    saved_file = load_state(output_dir)
+    failed_log_dir="failed_logs"
     os.makedirs(output_dir, exist_ok=True)
-
+    os.makedirs(failed_log_dir, exist_ok=True)
     for character_id in characters:
-        process_animations_for_character(bearer_token, character_id, output_dir, state)
+        character_name = characters[character_id]['name']
+        foder_name=f"{character_name}_{character_id}"
+        iter_output_dir=os.path.join(output_dir,foder_name)
+        # check if the folder exists
+        if not os.path.exists(iter_output_dir):
+            os.makedirs(iter_output_dir, exist_ok=True)
+        process_animations_for_character(bearer_token, character_id, iter_output_dir, saved_file,failed_log_dir=failed_log_dir)
 
     logging.info("🎉 Script execution completed")
 
